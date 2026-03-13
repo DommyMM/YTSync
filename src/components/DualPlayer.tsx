@@ -544,17 +544,18 @@ export default function DualPlayer({
               </div>
             </div>
           ) : null}
-          <div
-            className={`${
-              isFullscreen
-                ? "absolute inset-x-0 bottom-0 z-20 mx-4 mb-4"
-                : "relative mt-4"
-            } transition duration-200 ${
-              !isFullscreen || controlsVisible
-                ? "translate-y-0 opacity-100"
-                : "translate-y-4 opacity-0"
-            }`}
-          >
+        </div>
+        <div
+          className={`${
+            isFullscreen
+              ? "pointer-events-auto absolute inset-x-0 bottom-0 z-20 mx-4 mb-4"
+              : "relative mt-4"
+          } transition duration-200 ${
+            !isFullscreen || controlsVisible
+              ? "translate-y-0 opacity-100"
+              : "translate-y-4 opacity-0"
+          }`}
+        >
         <div
           className={`rounded-[1.5rem] border border-white/8 bg-black/55 p-4 backdrop-blur-md ${
             isFullscreen ? "shadow-[var(--shadow)]" : "bg-black/20"
@@ -622,7 +623,6 @@ export default function DualPlayer({
             </div>
           </div>
         </div>
-          </div>
         </div>
       </div>
 
