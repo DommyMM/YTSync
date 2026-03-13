@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type SyncStatus = "idle" | "loading" | "ready" | "playing" | "paused" | "error";
 
@@ -107,10 +108,16 @@ export default function DualPlayer({
   enVideoId,
   jpVideoId,
 }: DualPlayerProps) {
+  const playerShellRef = useRef<HTMLDivElement | null>(null);
   const enPlayerRef = useRef<PlayerLike | null>(null);
   const jpPlayerRef = useRef<PlayerLike | null>(null);
   const syncFrameRef = useRef<number | null>(null);
+  const controlsTimeoutRef = useRef<number | null>(null);
   const readyStateRef = useRef({ en: false, jp: false });
+  const restoreRef = useRef({ time: 0, wasPlaying: false });
+  const playRef = useRef<() => void>(() => {});
+  const currentTimeRef = useRef(0);
+  const statusRef = useRef<SyncStatus>("idle");
 
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [duration, setDuration] = useState(0);
@@ -119,15 +126,19 @@ export default function DualPlayer({
   const [offsetMs, setOffsetMs] = useState(DEFAULT_OFFSET_MS);
   const [driftMs, setDriftMs] = useState(0);
   const [error, setError] = useState("");
-  const [showJpPlayer, setShowJpPlayer] = useState(false);
+  const [nativeControlsEnabled, setNativeControlsEnabled] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
 
-  const maybeSetReady = () => {
-    if (readyStateRef.current.en && readyStateRef.current.jp) {
-      setStatus("ready");
-    }
-  };
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+  }, [currentTime]);
 
-  const destroyPlayers = () => {
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  const destroyPlayers = useCallback(() => {
     try {
       enPlayerRef.current?.destroy();
     } catch {}
@@ -137,26 +148,69 @@ export default function DualPlayer({
 
     enPlayerRef.current = null;
     jpPlayerRef.current = null;
-  };
+  }, []);
 
-  const stopSyncLoop = () => {
+  const stopSyncLoop = useCallback(() => {
     if (syncFrameRef.current !== null) {
       cancelAnimationFrame(syncFrameRef.current);
       syncFrameRef.current = null;
     }
-  };
+  }, []);
 
-  const targetJpTime = (enTime: number) => {
+  const targetJpTime = useCallback((enTime: number) => {
     return clampTime(enTime + offsetMs / 1000);
-  };
+  }, [offsetMs]);
+
+  const clearControlsTimer = useCallback(() => {
+    if (controlsTimeoutRef.current !== null) {
+      window.clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+  }, []);
+
+  const pulseControls = useCallback((keepVisible = false) => {
+    setControlsVisible(true);
+    clearControlsTimer();
+
+    if (!isFullscreen || keepVisible || statusRef.current !== "playing") {
+      return;
+    }
+
+    controlsTimeoutRef.current = window.setTimeout(() => {
+      setControlsVisible(false);
+    }, 1800);
+  }, [clearControlsTimer, isFullscreen]);
 
   useEffect(() => {
     let cancelled = false;
 
+    const syncRestoreTime = (time: number) => {
+      return clampTime(time + offsetMs / 1000);
+    };
+
+    const maybeSetReady = () => {
+      if (readyStateRef.current.en && readyStateRef.current.jp) {
+        setStatus("ready");
+        setCurrentTime(restoreRef.current.time);
+
+        if (restoreRef.current.wasPlaying) {
+          restoreRef.current.wasPlaying = false;
+          window.setTimeout(() => {
+            playRef.current();
+          }, 0);
+        }
+      }
+    };
+
     async function initPlayers() {
+      restoreRef.current = {
+        time: enPlayerRef.current?.getCurrentTime() ?? currentTimeRef.current,
+        wasPlaying: statusRef.current === "playing",
+      };
+
       setStatus("loading");
       setError("");
-      setCurrentTime(0);
+      setCurrentTime(restoreRef.current.time);
       setDuration(0);
       setDriftMs(0);
       readyStateRef.current = { en: false, jp: false };
@@ -172,9 +226,8 @@ export default function DualPlayer({
       enPlayerRef.current = new window.YT.Player("en-frame", {
         videoId: enVideoId,
         playerVars: {
-          cc_load_policy: 1,
-          controls: 0,
-          disablekb: 1,
+          controls: nativeControlsEnabled ? 1 : 0,
+          disablekb: nativeControlsEnabled ? 0 : 1,
           modestbranding: 1,
           playsinline: 1,
           rel: 0,
@@ -186,6 +239,9 @@ export default function DualPlayer({
           },
           onReady: ({ target }) => {
             target.mute();
+            if (restoreRef.current.time > 0) {
+              target.seekTo(restoreRef.current.time, true);
+            }
             readyStateRef.current.en = true;
             setDuration(target.getDuration());
             maybeSetReady();
@@ -199,6 +255,7 @@ export default function DualPlayer({
               jpPlayerRef.current?.pauseVideo();
               stopSyncLoop();
               setStatus("paused");
+              pulseControls(true);
             }
 
             if (data === window.YT.PlayerState.ENDED) {
@@ -206,6 +263,7 @@ export default function DualPlayer({
               stopSyncLoop();
               setStatus("ready");
               setCurrentTime(enPlayerRef.current?.getDuration() ?? 0);
+              pulseControls(true);
             }
           },
         },
@@ -228,6 +286,9 @@ export default function DualPlayer({
           onReady: ({ target }) => {
             target.setVolume(DEFAULT_VOLUME);
             target.unMute();
+            if (restoreRef.current.time > 0) {
+              target.seekTo(syncRestoreTime(restoreRef.current.time), true);
+            }
             readyStateRef.current.jp = true;
             maybeSetReady();
           },
@@ -242,13 +303,37 @@ export default function DualPlayer({
       stopSyncLoop();
       destroyPlayers();
     };
-  }, [enVideoId, jpVideoId]);
+  }, [destroyPlayers, enVideoId, jpVideoId, nativeControlsEnabled, offsetMs, pulseControls, stopSyncLoop]);
 
   useEffect(() => {
     jpPlayerRef.current?.setVolume(volume);
   }, [volume]);
 
-  function startSyncLoop() {
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = document.fullscreenElement === playerShellRef.current;
+      setIsFullscreen(active);
+      setControlsVisible(true);
+
+      if (active) {
+        playerShellRef.current?.focus();
+        if (statusRef.current === "playing") {
+          window.setTimeout(() => {
+            pulseControls();
+          }, 0);
+        }
+      } else {
+        clearControlsTimer();
+      }
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, [clearControlsTimer, pulseControls]);
+
+  const startSyncLoop = useCallback(() => {
     stopSyncLoop();
 
     const loop = () => {
@@ -286,9 +371,9 @@ export default function DualPlayer({
     };
 
     syncFrameRef.current = requestAnimationFrame(loop);
-  }
+  }, [stopSyncLoop, targetJpTime, volume]);
 
-  function play() {
+  const play = useCallback(() => {
     const enPlayer = enPlayerRef.current;
     const jpPlayer = jpPlayerRef.current;
 
@@ -313,13 +398,19 @@ export default function DualPlayer({
 
     setStatus("playing");
     startSyncLoop();
-  }
+    pulseControls();
+  }, [pulseControls, startSyncLoop, targetJpTime, volume]);
+
+  useEffect(() => {
+    playRef.current = play;
+  }, [play]);
 
   function pause() {
     enPlayerRef.current?.pauseVideo();
     jpPlayerRef.current?.pauseVideo();
     stopSyncLoop();
     setStatus("paused");
+    pulseControls(true);
   }
 
   function seek(nextTime: number) {
@@ -327,12 +418,77 @@ export default function DualPlayer({
     enPlayerRef.current?.seekTo(clampedTime, true);
     jpPlayerRef.current?.seekTo(targetJpTime(clampedTime), true);
     setCurrentTime(clampedTime);
+    pulseControls(true);
   }
 
   function resetSync() {
     const enTime = enPlayerRef.current?.getCurrentTime() ?? 0;
     jpPlayerRef.current?.seekTo(targetJpTime(enTime), true);
     setDriftMs(0);
+    pulseControls(true);
+  }
+
+  async function toggleFullscreen() {
+    const shell = playerShellRef.current;
+    if (!shell) {
+      return;
+    }
+
+    if (document.fullscreenElement === shell) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    await shell.requestFullscreen();
+    shell.focus();
+  }
+
+  function togglePlayback() {
+    if (isPlaying) {
+      pause();
+      return;
+    }
+
+    play();
+  }
+
+  function handleShellKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.target instanceof HTMLInputElement) {
+      return;
+    }
+
+    if (event.code === "Space") {
+      event.preventDefault();
+      togglePlayback();
+      pulseControls(true);
+      return;
+    }
+
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      seek((enPlayerRef.current?.getCurrentTime() ?? currentTime) - 5);
+      pulseControls(true);
+      return;
+    }
+
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      seek((enPlayerRef.current?.getCurrentTime() ?? currentTime) + 5);
+      pulseControls(true);
+      return;
+    }
+
+    if (event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      void toggleFullscreen();
+      pulseControls(true);
+      return;
+    }
+
+    if (event.key === "Escape" && document.fullscreenElement === playerShellRef.current) {
+      event.preventDefault();
+      void document.exitFullscreen();
+    }
   }
 
   const isReady = status !== "idle" && status !== "loading" && status !== "error";
@@ -340,15 +496,41 @@ export default function DualPlayer({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <div className="space-y-4">
-        <div className="relative overflow-hidden rounded-[1.5rem] border border-white/8 bg-black shadow-[var(--shadow)]">
-          <div className="aspect-video w-full">
+      <div
+        ref={playerShellRef}
+        className={`relative ${isFullscreen ? "fixed inset-0 z-50 bg-black" : "space-y-4"}`}
+        onDoubleClick={() => {
+          void toggleFullscreen();
+        }}
+        onMouseMove={() => pulseControls()}
+        onPointerDown={() => pulseControls(true)}
+        onKeyDown={handleShellKeyDown}
+        tabIndex={0}
+      >
+        <div
+          className={`relative overflow-hidden bg-black shadow-[var(--shadow)] ${
+            isFullscreen
+              ? "h-full w-full"
+              : "rounded-[1.5rem] border border-white/8"
+          }`}
+        >
+          <div className={`${isFullscreen ? "h-full" : "aspect-video"} w-full`}>
             <div className="h-full w-full" id="en-frame" />
           </div>
 
-          <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-3">
+          {!nativeControlsEnabled ? (
+            <div aria-hidden="true" className="absolute inset-0 z-10" />
+          ) : null}
+
+          <div
+            className={`pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-3 transition duration-200 ${
+              !isFullscreen || controlsVisible
+                ? "opacity-100"
+                : "translate-y-2 opacity-0"
+            }`}
+          >
             <span className="rounded-full border border-white/10 bg-black/55 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.22em] text-white/80 backdrop-blur">
-              EN video muted
+              {nativeControlsEnabled ? "Native controls on" : "EN video muted"}
             </span>
             <span className="rounded-full border border-accent/20 bg-accent-soft px-3 py-1 font-mono text-[11px] uppercase tracking-[0.22em] text-accent backdrop-blur">
               JP audio live
@@ -362,14 +544,27 @@ export default function DualPlayer({
               </div>
             </div>
           ) : null}
-        </div>
-
-        <div className="rounded-[1.5rem] border border-white/8 bg-black/20 p-4">
+          <div
+            className={`${
+              isFullscreen
+                ? "absolute inset-x-0 bottom-0 z-20 mx-4 mb-4"
+                : "relative mt-4"
+            } transition duration-200 ${
+              !isFullscreen || controlsVisible
+                ? "translate-y-0 opacity-100"
+                : "translate-y-4 opacity-0"
+            }`}
+          >
+        <div
+          className={`rounded-[1.5rem] border border-white/8 bg-black/55 p-4 backdrop-blur-md ${
+            isFullscreen ? "shadow-[var(--shadow)]" : "bg-black/20"
+          }`}
+        >
           <div className="flex flex-wrap items-center gap-3">
             <button
               className="inline-flex min-h-11 min-w-28 items-center justify-center rounded-2xl bg-accent px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/40"
               disabled={!isReady}
-              onClick={isPlaying ? pause : play}
+              onClick={togglePlayback}
               type="button"
             >
               {isPlaying ? "Pause" : "Play both"}
@@ -387,10 +582,22 @@ export default function DualPlayer({
             <button
               className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 px-4 py-2 text-sm text-white transition hover:border-white/20 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-white/40"
               disabled={!isReady}
-              onClick={() => setShowJpPlayer((value) => !value)}
+              onClick={() => setNativeControlsEnabled((value) => !value)}
               type="button"
             >
-              {showJpPlayer ? "Hide JP Player" : "Show JP Player"}
+              {nativeControlsEnabled ? "Lock Video Clicks" : "Native CC"}
+            </button>
+
+            <button
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 px-4 py-2 text-sm text-white transition hover:border-white/20 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-white/40"
+              disabled={!isReady}
+              onClick={() => {
+                void toggleFullscreen();
+                pulseControls(true);
+              }}
+              type="button"
+            >
+              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             </button>
 
             <div className="ml-auto flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 font-mono text-xs uppercase tracking-[0.2em] text-muted">
@@ -415,9 +622,15 @@ export default function DualPlayer({
             </div>
           </div>
         </div>
+          </div>
+        </div>
       </div>
 
-      <aside className="space-y-4 rounded-[1.5rem] border border-white/8 bg-black/20 p-4">
+      <aside
+        className={`space-y-4 rounded-[1.5rem] border border-white/8 bg-black/20 p-4 ${
+          isFullscreen ? "hidden" : ""
+        }`}
+      >
         <div className="space-y-4">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.26em] text-muted">
@@ -487,9 +700,11 @@ export default function DualPlayer({
           </div>
 
           <div className="rounded-2xl border border-white/8 bg-black/20 p-4 text-xs leading-6 text-muted">
-            If audio still fails, click <span className="text-white">Show JP Player</span>.
-            That exposes the JP iframe directly, which is the quickest way to
-            confirm whether the browser is suppressing offscreen playback.
+            Subtitles are not forced on anymore. Click{" "}
+            <span className="text-white">Native CC</span> when you want
+            YouTube&apos;s own caption toggle, then click{" "}
+            <span className="text-white">Lock Video Clicks</span> to return to
+            the app-only controls.
           </div>
 
           {error ? (
@@ -500,13 +715,7 @@ export default function DualPlayer({
         </div>
       </aside>
 
-      <div
-        className={`fixed z-20 overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[var(--shadow)] transition ${
-          showJpPlayer
-            ? "bottom-5 right-5 h-[225px] w-[400px] opacity-100"
-            : "left-[-9999px] top-0 h-[225px] w-[400px] opacity-[0.01]"
-        }`}
-      >
+      <div className="fixed left-[-9999px] top-0 h-[225px] w-[400px] overflow-hidden opacity-[0.01]">
         <div id="jp-frame" />
       </div>
     </div>
