@@ -9,6 +9,8 @@ type PlayerLike = {
   getCurrentTime: () => number;
   getDuration: () => number;
   getPlayerState: () => number;
+  getVolume: () => number;
+  isMuted: () => boolean;
   mute: () => void;
   pauseVideo: () => void;
   playVideo: () => void;
@@ -117,6 +119,7 @@ export default function DualPlayer({
   const [offsetMs, setOffsetMs] = useState(DEFAULT_OFFSET_MS);
   const [driftMs, setDriftMs] = useState(0);
   const [error, setError] = useState("");
+  const [showJpPlayer, setShowJpPlayer] = useState(false);
 
   const maybeSetReady = () => {
     if (readyStateRef.current.en && readyStateRef.current.jp) {
@@ -272,6 +275,11 @@ export default function DualPlayer({
         jpPlayer.playVideo();
       }
 
+      if (jpPlayer.isMuted() || jpPlayer.getVolume() !== volume) {
+        jpPlayer.unMute();
+        jpPlayer.setVolume(volume);
+      }
+
       if (enPlayer.getPlayerState() === window.YT.PlayerState.PLAYING) {
         syncFrameRef.current = requestAnimationFrame(loop);
       }
@@ -293,8 +301,16 @@ export default function DualPlayer({
     jpPlayer.setVolume(volume);
     enPlayer.mute();
     jpPlayer.unMute();
-    enPlayer.playVideo();
     jpPlayer.playVideo();
+    enPlayer.playVideo();
+
+    window.setTimeout(() => {
+      jpPlayer.unMute();
+      jpPlayer.setVolume(volume);
+      jpPlayer.playVideo();
+      jpPlayer.seekTo(targetJpTime(enPlayer.getCurrentTime()), true);
+    }, 160);
+
     setStatus("playing");
     startSyncLoop();
   }
@@ -366,6 +382,15 @@ export default function DualPlayer({
               type="button"
             >
               Re-sync JP
+            </button>
+
+            <button
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/10 px-4 py-2 text-sm text-white transition hover:border-white/20 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-white/40"
+              disabled={!isReady}
+              onClick={() => setShowJpPlayer((value) => !value)}
+              type="button"
+            >
+              {showJpPlayer ? "Hide JP Player" : "Show JP Player"}
             </button>
 
             <div className="ml-auto flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 font-mono text-xs uppercase tracking-[0.2em] text-muted">
@@ -461,6 +486,12 @@ export default function DualPlayer({
             </p>
           </div>
 
+          <div className="rounded-2xl border border-white/8 bg-black/20 p-4 text-xs leading-6 text-muted">
+            If audio still fails, click <span className="text-white">Show JP Player</span>.
+            That exposes the JP iframe directly, which is the quickest way to
+            confirm whether the browser is suppressing offscreen playback.
+          </div>
+
           {error ? (
             <div className="rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm text-red-100">
               {error}
@@ -469,7 +500,13 @@ export default function DualPlayer({
         </div>
       </aside>
 
-      <div className="pointer-events-none absolute left-[-9999px] top-0 h-px w-px opacity-0">
+      <div
+        className={`fixed z-20 overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[var(--shadow)] transition ${
+          showJpPlayer
+            ? "bottom-5 right-5 h-[225px] w-[400px] opacity-100"
+            : "left-[-9999px] top-0 h-[225px] w-[400px] opacity-[0.01]"
+        }`}
+      >
         <div id="jp-frame" />
       </div>
     </div>
