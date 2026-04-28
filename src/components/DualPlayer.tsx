@@ -108,6 +108,17 @@ export default function DualPlayer({
   const [driftMs, setDriftMs] = useState(0);
   const [error, setError] = useState("");
 
+  const resyncJp = () => {
+    const en = enPlayerRef.current;
+    const jp = jpPlayerRef.current;
+    if (!en || !jp || !enReadyRef.current || !jpReadyRef.current) return;
+    try {
+      jp.seekTo(en.getCurrentTime(), true);
+      jp.setVolume(volumeRef.current);
+      setDriftMs(0);
+    } catch {}
+  };
+
   useEffect(() => {
     volumeRef.current = volume;
     try {
@@ -302,7 +313,7 @@ export default function DualPlayer({
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="space-y-4">
-        <div className="relative overflow-hidden rounded-[1.5rem] border border-white/8 bg-black shadow-[var(--shadow)]">
+        <div className="relative overflow-hidden rounded-3xl border border-white/8 bg-black shadow-[(--shadow)]">
           <div className="aspect-video w-full">
             <div className="h-full w-full" id="en-frame" />
           </div>
@@ -326,14 +337,14 @@ export default function DualPlayer({
         </div>
       </div>
 
-      <aside className="space-y-4 rounded-[1.5rem] border border-white/8 bg-black/20 p-4">
+      <aside className="space-y-4 rounded-3xl border border-white/8 bg-black/20 p-4">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.26em] text-muted">
             JP volume
           </p>
           <div className="mt-3 flex items-center gap-3">
             <input
-              className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-[var(--accent)]"
+              className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-accent"
               max={100}
               min={0}
               onChange={(event) => setVolume(Number(event.target.value))}
@@ -347,14 +358,26 @@ export default function DualPlayer({
         </div>
 
         <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-          <p className="font-mono text-[11px] uppercase tracking-[0.26em] text-muted">
-            Status
-          </p>
-          <p className="mt-2 font-mono text-sm text-white">{status}</p>
-          <p className="mt-1 font-mono text-xs text-muted">
-            drift {driftMs > 0 ? "+" : ""}
-            {driftMs}ms
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-mono text-[11px] uppercase tracking-[0.26em] text-muted">
+                Status
+              </p>
+              <p className="mt-2 font-mono text-sm text-white">{status}</p>
+              <p className="mt-1 font-mono text-xs text-muted">
+                drift {driftMs > 0 ? "+" : ""}
+                {driftMs}ms
+              </p>
+            </div>
+            <button
+              className="inline-flex min-h-9 items-center justify-center rounded-2xl border border-white/10 px-3 py-1.5 text-xs text-white transition hover:border-white/20 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-white/40"
+              disabled={status === "idle" || status === "loading" || status === "error"}
+              onClick={resyncJp}
+              type="button"
+            >
+              Re-sync JP
+            </button>
+          </div>
         </div>
 
         <div className="rounded-2xl border border-white/8 bg-black/20 p-4 text-xs leading-6 text-muted">

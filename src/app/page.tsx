@@ -91,7 +91,7 @@ export default function Home() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
       <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="relative overflow-hidden rounded-[2rem] border border-border bg-surface p-6 shadow-[var(--shadow)] backdrop-blur-xl sm:p-8">
+        <div className="relative overflow-hidden rounded-4xl border border-border bg-surface p-6 shadow-[(--shadow)] backdrop-blur-xl sm:p-8">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(118,228,195,0.16),transparent_36%),radial-gradient(circle_at_bottom_right,rgba(246,193,119,0.14),transparent_34%)]" />
           <div className="relative space-y-6">
             <div className="space-y-3">
@@ -180,7 +180,7 @@ export default function Home() {
           </div>
         </div>
 
-        <aside className="rounded-[2rem] border border-border bg-surface p-6 shadow-[var(--shadow)] backdrop-blur-xl sm:p-8">
+        <aside className="rounded-4xl border border-border bg-surface p-6 shadow-[(--shadow)] backdrop-blur-xl sm:p-8">
           <div className="space-y-5">
             <div>
               <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-muted">
@@ -271,11 +271,11 @@ export default function Home() {
         </aside>
       </section>
 
-      <section className="rounded-[2rem] border border-border bg-surface p-4 shadow-[var(--shadow)] backdrop-blur-xl sm:p-5">
+      <section className="rounded-4xl border border-border bg-surface p-4 shadow-[(--shadow)] backdrop-blur-xl sm:p-5">
         {enVideoId && activeJpVideoId ? (
           <DualPlayer enVideoId={enVideoId} jpVideoId={activeJpVideoId} />
         ) : (
-          <div className="flex min-h-[26rem] flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-white/10 bg-black/15 px-6 text-center">
+          <div className="flex min-h-104 flex-col items-center justify-center rounded-3xl border border-dashed border-white/10 bg-black/15 px-6 text-center">
             <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-muted">
               Player standby
             </p>
