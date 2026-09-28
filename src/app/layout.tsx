@@ -1,37 +1,30 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
+import { Barlow, Barlow_Condensed } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
+const barlow = Barlow({
+  variable: "--font-body",
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
-
-const ibmPlexMono = IBM_Plex_Mono({
-  variable: "--font-ibm-plex-mono",
+const condensed = Barlow_Condensed({
+  variable: "--font-display",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["500", "600"],
 });
 
 export const metadata: Metadata = {
   title: "YTSync",
-  description: "Play Wuthering Waves EN video with JP audio in sync.",
+  description: "English picture with Japanese audio on one timeline",
 };
-
-export const viewport: Viewport = {
-  themeColor: "#0d1117",
-};
+export const viewport: Viewport = { themeColor: "#edf2f4" };
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body
-        className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} antialiased`}
-      >
+      <body className={`${barlow.variable} ${condensed.variable}`}>
         {children}
       </body>
     </html>

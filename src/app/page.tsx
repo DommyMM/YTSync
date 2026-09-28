@@ -1,294 +1,297 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { useRef, useState } from "react";
 import DualPlayer from "@/components/DualPlayer";
+import {
+  EXAMPLE,
+  extractVideoId,
+  thumbUrl,
+  watchUrl,
+  type Candidate,
+  type Match,
+} from "@/lib/youtube";
 
-type MatchResult = {
-  durationMatches: boolean;
-  enDuration: string;
-  enTitle: string;
-  jpDuration: string;
-  jpTitle: string;
-  jpVideoId: string;
-  position: number;
-};
+const OFFSET_LIMIT = 5000;
+const OFFSET_STEP = 50;
 
-function extractVideoId(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return "";
-  }
+const clampOffset = (ms: number) =>
+  Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, Math.round(ms) || 0));
 
-  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
-    return trimmed;
-  }
+function gap(seconds: number) {
+  const s = Math.abs(seconds);
+  return s < 60
+    ? `${s} s`
+    : s < 3600
+      ? `${Math.round(s / 60)} min`
+      : `${Math.round(s / 3600)} h`;
+}
 
-  try {
-    const url = new URL(trimmed);
+function lengthNote(diff: number) {
+  return diff === 0
+    ? "same length"
+    : `${Math.abs(diff)} s ${diff > 0 ? "longer" : "shorter"}`;
+}
 
-    if (url.hostname === "youtu.be") {
-      return url.pathname.replace("/", "").slice(0, 11);
-    }
-
-    const directId = url.searchParams.get("v");
-    if (directId) {
-      return directId.slice(0, 11);
-    }
-
-    const embedMatch = url.pathname.match(/\/(embed|shorts)\/([a-zA-Z0-9_-]{11})/);
-    if (embedMatch) {
-      return embedMatch[2];
-    }
-  } catch {
-    return "";
-  }
-
-  return "";
+function Bars() {
+  return (
+    <span className="bars" aria-hidden="true">
+      <i />
+      <i />
+      <i />
+      <i />
+    </span>
+  );
 }
 
 export default function Home() {
-  const [enUrl, setEnUrl] = useState("");
-  const [manualJpUrl, setManualJpUrl] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [match, setMatch] = useState<MatchResult | null>(null);
+  const [enUrl, setEnUrl] = useState(watchUrl(EXAMPLE.enId));
+  const [jpUrl, setJpUrl] = useState(watchUrl(EXAMPLE.jpId));
+  const [pair, setPair] = useState<{ en: string; jp: string } | null>({
+    en: EXAMPLE.enId,
+    jp: EXAMPLE.jpId,
+  });
+  const [match, setMatch] = useState<Match | null>(null);
+  const [matching, setMatching] = useState(false);
+  const [matchError, setMatchError] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [volume, setVolume] = useState(100);
+  const pending = useRef<AbortController | null>(null);
+  const enId = extractVideoId(enUrl);
+  const jpId = extractVideoId(jpUrl);
 
-  const enVideoId = useMemo(() => extractVideoId(enUrl), [enUrl]);
-  const manualJpVideoId = useMemo(() => extractVideoId(manualJpUrl), [manualJpUrl]);
-  const activeJpVideoId = manualJpVideoId || match?.jpVideoId || "";
-
-  async function findMatch(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
-
-    if (!enVideoId) {
-      setError("Paste a valid English YouTube URL first.");
-      return;
-    }
-
-    setIsLoading(true);
-    setError("");
+  async function findMatch(id: string) {
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
+    setMatching(true);
+    setMatchError("");
     setMatch(null);
-
+    setPair(null);
     try {
-      const response = await fetch(
-        `/api/match-jp?enVideoId=${encodeURIComponent(enVideoId)}`,
+      const response = await fetch(`/api/match?en=${id}`, {
+        signal: controller.signal,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      const best: Candidate = result.candidates[0];
+      setMatch(result);
+      setJpUrl(watchUrl(best.id));
+      setPair({ en: id, jp: best.id });
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      setMatchError(
+        `${err instanceof Error && err.message ? err.message : "Match failed."} Paste the Japanese link.`,
       );
-      const data = (await response.json()) as MatchResult & { error?: string };
-
-      if (!response.ok || data.error) {
-        setError(data.error ?? "Unable to find the JP match.");
-        return;
-      }
-
-      setMatch(data);
-    } catch {
-      setError("Unable to reach the matcher route.");
     } finally {
-      setIsLoading(false);
+      if (!controller.signal.aborted) setMatching(false);
     }
   }
 
+  function pickJp(id: string) {
+    setJpUrl(watchUrl(id));
+    if (enId) setPair({ en: enId, jp: id });
+  }
+
+  const current = match?.candidates.find((c) => c.id === pair?.jp);
+  const others = match?.candidates.filter((c) => c.id !== pair?.jp) ?? [];
+
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
-      <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="relative overflow-hidden rounded-4xl border border-border bg-surface p-6 shadow-[(--shadow)] backdrop-blur-xl sm:p-8">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(118,228,195,0.16),transparent_36%),radial-gradient(circle_at_bottom_right,rgba(246,193,119,0.14),transparent_34%)]" />
-          <div className="relative space-y-6">
-            <div className="space-y-3">
-              <span className="inline-flex rounded-full border border-accent/30 bg-accent-soft px-3 py-1 font-mono text-[11px] uppercase tracking-[0.3em] text-accent">
-                Private dual-audio player
-              </span>
-              <div className="space-y-3">
-                <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-                  English video on screen, Japanese audio underneath.
-                </h1>
-                <p className="max-w-2xl text-sm leading-7 text-muted sm:text-base">
-                  Paste the EN upload, match the same position from the JP
-                  channel, then run both embeds with the EN track muted.
-                </p>
-              </div>
-            </div>
+    <main className="shell">
+      <header className="masthead">
+        <Bars />
+        <span className="wordmark">YTSync</span>
+      </header>
 
-            <form className="space-y-4" onSubmit={findMatch}>
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-white">
-                  English YouTube URL
-                </span>
-                <input
-                  className="w-full rounded-2xl border border-white/10 bg-surface-strong px-4 py-3 text-sm text-white outline-none transition focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
-                  onChange={(event) => {
-                    setEnUrl(event.target.value);
-                    setMatch(null);
-                    setError("");
-                  }}
-                  placeholder="https://www.youtube.com/watch?v=aMAJhkp0hlc"
-                  spellCheck={false}
-                  value={enUrl}
-                />
-              </label>
-
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-white">
-                    Optional JP override
-                  </span>
-                  <input
-                    className="w-full rounded-2xl border border-white/10 bg-surface-strong px-4 py-3 text-sm text-white outline-none transition focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
-                    onChange={(event) => setManualJpUrl(event.target.value)}
-                    placeholder="Paste a JP link only if the auto-match is wrong"
-                    spellCheck={false}
-                    value={manualJpUrl}
+      <div className="studio">
+        <section className="screening" aria-label="Player">
+          {pair ? (
+            <DualPlayer
+              enId={pair.en}
+              jpId={pair.jp}
+              offsetMs={offset}
+              volume={volume}
+            />
+          ) : (
+            <>
+              <div className="screen is-empty">
+                {enId ? (
+                  <div
+                    className="poster"
+                    style={{
+                      backgroundImage: `url(${thumbUrl(enId, "maxresdefault")})`,
+                    }}
                   />
-                </label>
+                ) : null}
+              </div>
+              <div className="status">
+                <span className={`dot ${matching ? "is-busy" : ""}`} />
+                <span role="status">
+                  {matching
+                    ? "Finding the Japanese upload"
+                    : enId
+                      ? "Paste the Japanese link"
+                      : "Paste an English link"}
+                </span>
+              </div>
+            </>
+          )}
+        </section>
 
+        <aside className="panel">
+          <div className="source">
+            <label htmlFor="en-url">English picture</label>
+            <SourceThumb id={enId} />
+            <input
+              id="en-url"
+              value={enUrl}
+              onChange={(event) => {
+                setEnUrl(event.target.value);
+                const id = extractVideoId(event.target.value);
+                if (id && id !== pair?.en) void findMatch(id);
+              }}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="YouTube link"
+            />
+          </div>
+          <div className="source is-voice">
+            <label htmlFor="jp-url">Japanese voice</label>
+            <SourceThumb id={jpId} voice />
+            <input
+              id="jp-url"
+              value={jpUrl}
+              onChange={(event) => {
+                setJpUrl(event.target.value);
+                const id = extractVideoId(event.target.value);
+                if (id && enId) setPair({ en: enId, jp: id });
+              }}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder={matching ? "Matching" : "YouTube link"}
+            />
+          </div>
+
+          {matchError ? (
+            <p className="note is-error" role="alert">
+              {matchError}
+            </p>
+          ) : current ? (
+            <p
+              className={`note ${Math.abs(current.lengthDiff) > 2 ? "is-error" : ""}`}
+            >
+              Matched by posting time: {gap(current.publishGap)} apart,{" "}
+              {lengthNote(current.lengthDiff)}.
+            </p>
+          ) : null}
+
+          {others.length ? (
+            <div className="others">
+              <p className="field-label">Other Japanese uploads that day</p>
+              {others.map((c) => (
                 <button
-                  className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/45"
-                  disabled={!enVideoId || isLoading}
-                  type="submit"
+                  key={c.id}
+                  type="button"
+                  className="other"
+                  onClick={() => pickJp(c.id)}
                 >
-                  {isLoading ? "Matching..." : "Find JP Match"}
-                </button>
-              </div>
-            </form>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-muted">
-                  Strategy
-                </p>
-                <p className="mt-2 text-sm text-white">
-                  Match by upload position instead of title.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-muted">
-                  Verify
-                </p>
-                <p className="mt-2 text-sm text-white">
-                  Cross-check duration before playback starts.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-muted">
-                  Tune
-                </p>
-                <p className="mt-2 text-sm text-white">
-                  Nudge JP offset if a trailer needs manual correction.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <aside className="rounded-4xl border border-border bg-surface p-6 shadow-[(--shadow)] backdrop-blur-xl sm:p-8">
-          <div className="space-y-5">
-            <div>
-              <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-muted">
-                Locked channels
-              </p>
-              <div className="mt-3 space-y-3 text-sm text-slate-200">
-                <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                  <p className="font-medium text-white">@WutheringWaves</p>
-                  <p className="mt-1 text-muted">
-                    Visible player, captions on, muted.
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                  <p className="font-medium text-white">@wutheringwaves3352</p>
-                  <p className="mt-1 text-muted">
-                    Hidden player, JP audio only.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-              <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-muted">
-                Current state
-              </p>
-              <div className="mt-3 space-y-2 text-sm">
-                <p className="text-white">
-                  EN video ID:{" "}
-                  <span className="font-mono text-accent">
-                    {enVideoId || "waiting"}
-                  </span>
-                </p>
-                <p className="text-white">
-                  JP source:{" "}
-                  <span className="font-mono text-accent">
-                    {manualJpVideoId || match?.jpVideoId || "waiting"}
-                  </span>
-                </p>
-              </div>
-            </div>
-
-            {error ? (
-              <div className="rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm text-red-100">
-                {error}
-              </div>
-            ) : null}
-
-            {match ? (
-              <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-white/10 px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.24em] text-muted">
-                    Position {match.position}
-                  </span>
                   <span
-                    className={`rounded-full px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.24em] ${
-                      match.durationMatches
-                        ? "bg-accent-soft text-accent"
-                        : "bg-warn/15 text-warn"
-                    }`}
-                  >
-                    {match.durationMatches
-                      ? "Duration match"
-                      : `${match.enDuration} vs ${match.jpDuration}`}
+                    className="thumb"
+                    style={{
+                      backgroundImage: `url(${thumbUrl(c.id, "mqdefault")})`,
+                    }}
+                  />
+                  <span>
+                    {c.title}
+                    <small>
+                      {gap(c.publishGap)} apart, {lengthNote(c.lengthDiff)}
+                    </small>
                   </span>
-                </div>
-                <div className="mt-4 space-y-3 text-sm">
-                  <div>
-                    <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted">
-                      EN
-                    </p>
-                    <p className="mt-1 text-white">{match.enTitle}</p>
-                  </div>
-                  <div>
-                    <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted">
-                      JP
-                    </p>
-                    <p className="mt-1 text-white">{match.jpTitle}</p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 p-4 text-sm text-muted">
-                Run the matcher once and the player panel below will become
-                active.
-              </div>
-            )}
-          </div>
-        </aside>
-      </section>
+                </button>
+              ))}
+            </div>
+          ) : null}
 
-      <section className="rounded-4xl border border-border bg-surface p-4 shadow-[(--shadow)] backdrop-blur-xl sm:p-5">
-        {enVideoId && activeJpVideoId ? (
-          <DualPlayer enVideoId={enVideoId} jpVideoId={activeJpVideoId} />
-        ) : (
-          <div className="flex min-h-104 flex-col items-center justify-center rounded-3xl border border-dashed border-white/10 bg-black/15 px-6 text-center">
-            <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-muted">
-              Player standby
-            </p>
-            <h2 className="mt-4 text-2xl font-semibold text-white">
-              Paste the EN link and resolve the JP match.
-            </h2>
-            <p className="mt-3 max-w-xl text-sm leading-7 text-muted">
-              The visible player stays English-only. The JP video sits offscreen
-              and only provides audio.
-            </p>
+          <label className="field-label" htmlFor="volume">
+            Voice volume
+          </label>
+          <input
+            id="volume"
+            className="volume"
+            type="range"
+            min={0}
+            max={100}
+            value={volume}
+            onChange={(event) => setVolume(Number(event.target.value))}
+          />
+
+          <label className="field-label" htmlFor="offset">
+            Voice offset
+          </label>
+          <div className="offset">
+            <button
+              type="button"
+              aria-label={`Play the voice ${OFFSET_STEP} ms earlier`}
+              disabled={offset <= -OFFSET_LIMIT}
+              onClick={() => setOffset((ms) => clampOffset(ms - OFFSET_STEP))}
+            >
+              −
+            </button>
+            <span className="offset-value">
+              <input
+                id="offset"
+                type="number"
+                min={-OFFSET_LIMIT}
+                max={OFFSET_LIMIT}
+                step={OFFSET_STEP}
+                value={offset}
+                onChange={(event) =>
+                  setOffset(clampOffset(Number(event.target.value)))
+                }
+              />
+              ms
+            </span>
+            <button
+              type="button"
+              aria-label={`Play the voice ${OFFSET_STEP} ms later`}
+              disabled={offset >= OFFSET_LIMIT}
+              onClick={() => setOffset((ms) => clampOffset(ms + OFFSET_STEP))}
+            >
+              +
+            </button>
+            {offset !== 0 ? (
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => setOffset(0)}
+              >
+                Reset
+              </button>
+            ) : null}
           </div>
-        )}
-      </section>
+          <p className="hint">
+            {offset === 0
+              ? "Positive plays the voice later, negative earlier."
+              : `Voice plays ${Math.abs(offset)} ms ${offset > 0 ? "later" : "earlier"}.`}
+          </p>
+        </aside>
+      </div>
     </main>
+  );
+}
+
+/** Thumbnail proving the link parsed. The voice one is greyed since only its sound is used */
+function SourceThumb({ id, voice = false }: { id: string; voice?: boolean }) {
+  if (!id) return <span className="thumb" aria-hidden="true" />;
+  return (
+    <a
+      className="thumb"
+      href={watchUrl(id)}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`Open the ${voice ? "Japanese" : "English"} upload on YouTube`}
+      style={{ backgroundImage: `url(${thumbUrl(id, "mqdefault")})` }}
+    >
+      {voice ? <Bars /> : null}
+    </a>
   );
 }
