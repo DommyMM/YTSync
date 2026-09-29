@@ -1,30 +1,25 @@
 import type { Metadata, Viewport } from "next";
-import { Barlow, Barlow_Condensed } from "next/font/google";
+import { Zen_Kaku_Gothic_New } from "next/font/google";
 import "./globals.css";
 
-const barlow = Barlow({
+const zenKaku = Zen_Kaku_Gothic_New({
   variable: "--font-body",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
-});
-const condensed = Barlow_Condensed({
-  variable: "--font-display",
-  subsets: ["latin"],
-  weight: ["500", "600"],
+  weight: ["400", "500", "700"],
 });
 
 export const metadata: Metadata = {
   title: "YTSync",
   description: "English picture with Japanese audio on one timeline",
 };
-export const viewport: Viewport = { themeColor: "#edf2f4" };
+export const viewport: Viewport = { themeColor: "#0a1618" };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${barlow.variable} ${condensed.variable}`}>
+      <body className={zenKaku.variable}>
         {children}
       </body>
     </html>

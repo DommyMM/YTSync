@@ -1,6 +1,3 @@
-/** Prefilled pair: Hsin showcase, EN picture and JP voice */
-export const EXAMPLE = { enId: "a3zMk49qpwI", jpId: "L1nJ56KZjlM" };
-
 /** JP upload that could pair with the EN video */
 export type Candidate = {
   id: string;

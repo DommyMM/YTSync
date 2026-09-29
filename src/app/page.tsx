@@ -1,9 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import DualPlayer from "@/components/DualPlayer";
+import DualPlayer, { Bars } from "@/components/DualPlayer";
 import {
-  EXAMPLE,
   extractVideoId,
   thumbUrl,
   watchUrl,
@@ -32,24 +31,10 @@ function lengthNote(diff: number) {
     : `${Math.abs(diff)} s ${diff > 0 ? "longer" : "shorter"}`;
 }
 
-function Bars() {
-  return (
-    <span className="bars" aria-hidden="true">
-      <i />
-      <i />
-      <i />
-      <i />
-    </span>
-  );
-}
-
 export default function Home() {
-  const [enUrl, setEnUrl] = useState(watchUrl(EXAMPLE.enId));
-  const [jpUrl, setJpUrl] = useState(watchUrl(EXAMPLE.jpId));
-  const [pair, setPair] = useState<{ en: string; jp: string } | null>({
-    en: EXAMPLE.enId,
-    jp: EXAMPLE.jpId,
-  });
+  const [enUrl, setEnUrl] = useState("");
+  const [jpUrl, setJpUrl] = useState("");
+  const [pair, setPair] = useState<{ en: string; jp: string } | null>(null);
   const [match, setMatch] = useState<Match | null>(null);
   const [matching, setMatching] = useState(false);
   const [matchError, setMatchError] = useState("");
@@ -67,6 +52,7 @@ export default function Home() {
     setMatchError("");
     setMatch(null);
     setPair(null);
+    setJpUrl("");
     try {
       const response = await fetch(`/api/match?en=${id}`, {
         signal: controller.signal,
@@ -102,75 +88,45 @@ export default function Home() {
         <span className="wordmark">YTSync</span>
       </header>
 
-      <div className="studio">
-        <section className="screening" aria-label="Player">
-          {pair ? (
-            <DualPlayer
-              enId={pair.en}
-              jpId={pair.jp}
-              offsetMs={offset}
-              volume={volume}
-            />
-          ) : (
-            <>
-              <div className="screen is-empty">
-                {enId ? (
-                  <div
-                    className="poster"
-                    style={{
-                      backgroundImage: `url(${thumbUrl(enId, "maxresdefault")})`,
-                    }}
-                  />
-                ) : null}
-              </div>
-              <div className="status">
-                <span className={`dot ${matching ? "is-busy" : ""}`} />
-                <span role="status">
-                  {matching
-                    ? "Finding the Japanese upload"
-                    : enId
-                      ? "Paste the Japanese link"
-                      : "Paste an English link"}
-                </span>
-              </div>
-            </>
-          )}
-        </section>
+      <section className="bay" aria-label="Sources">
+        <div className="source is-picture">
+          <span className="glyph" lang="ja" aria-hidden="true">
+            映
+          </span>
+          <label htmlFor="en-url">English picture</label>
+          <input
+            id="en-url"
+            value={enUrl}
+            onChange={(event) => {
+              setEnUrl(event.target.value);
+              const id = extractVideoId(event.target.value);
+              if (id && id !== pair?.en) void findMatch(id);
+            }}
+            spellCheck={false}
+            autoComplete="off"
+            placeholder="Paste a YouTube link"
+          />
+          <SourceThumb id={enId} />
+        </div>
 
-        <aside className="panel">
-          <div className="source">
-            <label htmlFor="en-url">English picture</label>
-            <SourceThumb id={enId} />
-            <input
-              id="en-url"
-              value={enUrl}
-              onChange={(event) => {
-                setEnUrl(event.target.value);
-                const id = extractVideoId(event.target.value);
-                if (id && id !== pair?.en) void findMatch(id);
-              }}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="YouTube link"
-            />
-          </div>
-          <div className="source is-voice">
-            <label htmlFor="jp-url">Japanese voice</label>
-            <SourceThumb id={jpId} voice />
-            <input
-              id="jp-url"
-              value={jpUrl}
-              onChange={(event) => {
-                setJpUrl(event.target.value);
-                const id = extractVideoId(event.target.value);
-                if (id && enId) setPair({ en: enId, jp: id });
-              }}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder={matching ? "Matching" : "YouTube link"}
-            />
-          </div>
-
+        <div className="source is-voice">
+          <span className="glyph" lang="ja" aria-hidden="true">
+            音
+          </span>
+          <label htmlFor="jp-url">Japanese voice</label>
+          <input
+            id="jp-url"
+            value={jpUrl}
+            onChange={(event) => {
+              setJpUrl(event.target.value);
+              const id = extractVideoId(event.target.value);
+              if (id && enId) setPair({ en: enId, jp: id });
+            }}
+            spellCheck={false}
+            autoComplete="off"
+            placeholder={matching ? "Matching" : "Found from the English link"}
+          />
+          <SourceThumb id={jpId} voice />
           {matchError ? (
             <p className="note is-error" role="alert">
               {matchError}
@@ -183,50 +139,62 @@ export default function Home() {
               {lengthNote(current.lengthDiff)}.
             </p>
           ) : null}
+        </div>
+      </section>
 
-          {others.length ? (
-            <div className="others">
-              <p className="field-label">Other Japanese uploads that day</p>
-              {others.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className="other"
-                  onClick={() => pickJp(c.id)}
-                >
-                  <span
-                    className="thumb"
-                    style={{
-                      backgroundImage: `url(${thumbUrl(c.id, "mqdefault")})`,
-                    }}
-                  />
-                  <span>
-                    {c.title}
-                    <small>
-                      {gap(c.publishGap)} apart, {lengthNote(c.lengthDiff)}
-                    </small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          <label className="field-label" htmlFor="volume">
-            Voice volume
-          </label>
-          <input
-            id="volume"
-            className="volume"
-            type="range"
-            min={0}
-            max={100}
-            value={volume}
-            onChange={(event) => setVolume(Number(event.target.value))}
+      <section className="theater" aria-label="Player">
+        {pair ? (
+          <DualPlayer
+            key={`${pair.en}-${pair.jp}`}
+            enId={pair.en}
+            jpId={pair.jp}
+            offsetMs={offset}
+            volume={volume}
           />
+        ) : (
+          <div className="stage">
+            <div className="curtain">
+              {enId ? (
+                <div
+                  className="poster"
+                  style={{
+                    backgroundImage: `url(${thumbUrl(enId, "maxresdefault")})`,
+                  }}
+                />
+              ) : null}
+              <p className="curtain-note" role="status">
+                {matching ? <Bars live /> : null}
+                {matching
+                  ? "Finding the Japanese upload"
+                  : enId
+                    ? "Paste the Japanese link to pair it"
+                    : "Paste an English upload link to find its Japanese voice"}
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
 
-          <label className="field-label" htmlFor="offset">
-            Voice offset
-          </label>
+      <section className="mixer" aria-label="Voice controls">
+        <div className="control">
+          <label htmlFor="volume">Voice volume</label>
+          <div className="volume-row">
+            <input
+              id="volume"
+              className="volume"
+              type="range"
+              min={0}
+              max={100}
+              value={volume}
+              style={{ "--fill": `${volume}%` } as React.CSSProperties}
+              onChange={(event) => setVolume(Number(event.target.value))}
+            />
+            <output htmlFor="volume">{volume}</output>
+          </div>
+        </div>
+
+        <div className="control">
+          <label htmlFor="offset">Voice offset</label>
           <div className="offset">
             <button
               type="button"
@@ -273,13 +241,40 @@ export default function Home() {
               ? "Positive plays the voice later, negative earlier."
               : `Voice plays ${Math.abs(offset)} ms ${offset > 0 ? "later" : "earlier"}.`}
           </p>
-        </aside>
-      </div>
+        </div>
+      </section>
+
+      {others.length ? (
+        <section className="others" aria-labelledby="others-title">
+          <h2 id="others-title">Other Japanese uploads that day</h2>
+          <div className="others-grid">
+            {others.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className="other"
+                onClick={() => pickJp(c.id)}
+              >
+                <span
+                  className="thumb"
+                  style={{
+                    backgroundImage: `url(${thumbUrl(c.id, "mqdefault")})`,
+                  }}
+                />
+                <span className="other-title">{c.title}</span>
+                <small>
+                  {gap(c.publishGap)} apart, {lengthNote(c.lengthDiff)}
+                </small>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </main>
   );
 }
 
-/** Thumbnail proving the link parsed. The voice one is greyed since only its sound is used */
+/** Thumbnail proving the link parsed. The voice one is dimmed since only its sound is used */
 function SourceThumb({ id, voice = false }: { id: string; voice?: boolean }) {
   if (!id) return <span className="thumb" aria-hidden="true" />;
   return (
@@ -290,8 +285,6 @@ function SourceThumb({ id, voice = false }: { id: string; voice?: boolean }) {
       rel="noreferrer"
       aria-label={`Open the ${voice ? "Japanese" : "English"} upload on YouTube`}
       style={{ backgroundImage: `url(${thumbUrl(id, "mqdefault")})` }}
-    >
-      {voice ? <Bars /> : null}
-    </a>
+    />
   );
 }
